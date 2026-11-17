@@ -1,0 +1,5 @@
+Copper Quest - sample package
+
+This file stands in for a real installer so the download path can be tried
+end to end. Sign in, open the Copper Quest card, and upload a real package
+(a .zip or .exe, for example) to replace it.

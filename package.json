@@ -1,0 +1,13 @@
+{
+  "name": "demoscene-game-shelf",
+  "version": "1.0.0",
+  "description": "A dark demoscene game shelf served over HTTPS from a SQLite catalog.",
+  "private": true,
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "engines": {
+    "node": ">=22.13"
+  }
+}

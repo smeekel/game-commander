@@ -1,0 +1,130 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>The Rack</title>
+  <link rel="preload" href="/fonts/PressStart2P-Regular.ttf" as="font" type="font/ttf" crossorigin>
+  <link rel="stylesheet" href="/styles.css">
+  <script src="/background.js" defer></script>
+  <script src="/app.js" defer></script>
+</head>
+<body>
+  <canvas id="bg" aria-hidden="true"></canvas>
+  <div class="scanlines" aria-hidden="true"></div>
+
+  <header class="topbar">
+    <div class="topbar-side topbar-left">
+      <button id="add-btn" class="btn btn-primary" type="button" hidden>+ Add new</button>
+    </div>
+    <div class="masthead">
+      <h1 id="title" class="title">The Rack</h1>
+      <p id="mode" class="mode" hidden>Edit mode</p>
+    </div>
+    <div class="topbar-side topbar-right">
+      <span id="who" class="who" hidden></span>
+      <button id="login-btn" class="btn btn-quiet" type="button">Log in</button>
+      <button id="logout-btn" class="btn btn-quiet" type="button" hidden>Log out</button>
+    </div>
+  </header>
+  <div class="copper-rule" aria-hidden="true"></div>
+
+  <main>
+    <div class="searchbar">
+      <label for="search" class="prompt">SEARCH&gt;</label>
+      <input id="search" type="search" autocomplete="off" spellcheck="false" placeholder="name or tag">
+      <span id="count" class="count" aria-live="polite"></span>
+    </div>
+
+    <div id="message" class="message panel" hidden></div>
+    <section id="grid" class="grid" aria-label="Games"></section>
+  </main>
+
+  <dialog id="login-dialog" class="panel dialog dialog-small" aria-labelledby="login-heading">
+    <form id="login-form" novalidate>
+      <h2 id="login-heading" class="dialog-title">Log in</h2>
+      <label class="field">
+        <span>Username</span>
+        <input name="username" autocomplete="username" required>
+      </label>
+      <label class="field">
+        <span>Password</span>
+        <input name="password" type="password" autocomplete="current-password" required>
+      </label>
+      <p id="login-status" class="status" role="status"></p>
+      <div class="actions">
+        <span class="spacer"></span>
+        <button type="button" class="btn btn-quiet" data-close>Cancel</button>
+        <button type="submit" class="btn btn-primary">Log in</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="editor-dialog" class="panel dialog" aria-labelledby="editor-heading">
+    <form id="editor-form" novalidate>
+      <h2 id="editor-heading" class="dialog-title">Edit game</h2>
+
+      <div class="editor-grid">
+        <div class="editor-main">
+          <label class="field">
+            <span>Name</span>
+            <input name="name" maxlength="100" required>
+          </label>
+          <label class="field">
+            <span>Description</span>
+            <textarea name="description" rows="5" maxlength="2000"></textarea>
+          </label>
+          <label class="field">
+            <span>Tags <small>comma separated</small></span>
+            <input name="tags" placeholder="arcade, web, vector">
+          </label>
+
+          <fieldset class="field kind">
+            <legend>Type</legend>
+            <label><input type="radio" name="kind" value="web" checked> Web game</label>
+            <label><input type="radio" name="kind" value="install"> Download</label>
+          </fieldset>
+
+          <div data-kind="web">
+            <label class="field">
+              <span>Game link</span>
+              <input name="href" type="url" placeholder="https://..." maxlength="2000">
+            </label>
+          </div>
+          <div data-kind="install">
+            <label class="field">
+              <span>Package file <small>in public/packages</small></span>
+              <input name="package" placeholder="none yet" spellcheck="false">
+            </label>
+            <label class="field">
+              <span>Upload a package</span>
+              <input name="packageFile" type="file">
+            </label>
+          </div>
+        </div>
+
+        <div class="editor-side">
+          <div id="thumb-preview" class="thumb thumb-preview"></div>
+          <label class="field">
+            <span>Thumbnail file <small>in public/thumbnails</small></span>
+            <input name="thumbnail" placeholder="none yet" spellcheck="false">
+          </label>
+          <label class="field">
+            <span>Upload a thumbnail</span>
+            <input name="thumbnailFile" type="file" accept=".png,.jpg,.jpeg,.webp,.gif,.svg">
+          </label>
+        </div>
+      </div>
+
+      <p id="editor-status" class="status" role="status"></p>
+      <div class="actions">
+        <button type="button" id="delete-btn" class="btn btn-danger">Delete</button>
+        <a id="open-link" class="btn btn-quiet" target="_blank" rel="noopener noreferrer">Open</a>
+        <span class="spacer"></span>
+        <button type="button" class="btn btn-quiet" data-close>Cancel</button>
+        <button type="submit" id="save-btn" class="btn btn-primary">Save</button>
+      </div>
+    </form>
+  </dialog>
+</body>
+</html>
