@@ -1,11 +1,10 @@
 'use strict';
 
-const https = require('node:https');
+const http = require('node:http');
 const fs = require('node:fs');
 const fsp = require('node:fs/promises');
 const path = require('node:path');
 const crypto = require('node:crypto');
-const { execFileSync } = require('node:child_process');
 const { Transform } = require('node:stream');
 const { pipeline } = require('node:stream/promises');
 const { promisify } = require('node:util');
@@ -19,9 +18,9 @@ const THUMB_DIR = path.join(PUBLIC_DIR, 'thumbnails');
 const PACKAGE_DIR = path.join(PUBLIC_DIR, 'packages');
 const DATA_DIR = path.join(ROOT, 'data');
 const DB_PATH = path.join(DATA_DIR, 'shelf.db');
-const CERT_DIR = path.join(ROOT, 'certs');
 
-const PORT = Number(process.env.PORT) || 8443;
+const PORT = Number(process.env.PORT) || 8080;
+const HOST = process.env.HOST || '127.0.0.1';
 const SESSION_COOKIE = 'shelf_session';
 const SESSION_TTL_MS = 12 * 60 * 60 * 1000;
 const FAILED_LOGIN_DELAY_MS = 1000;
@@ -339,8 +338,17 @@ function getSession(req) {
   return { token, ...session };
 }
 
-function sessionCookie(token, maxAgeSeconds) {
-  return `${SESSION_COOKIE}=${token}; Path=/; HttpOnly; Secure; SameSite=Strict; Max-Age=${maxAgeSeconds}`;
+// HAProxy terminates TLS, so the socket here is plain HTTP. The Secure flag
+// follows the scheme the browser actually used.
+function clientIsHttps(req) {
+  const forwarded = req.headers['x-forwarded-proto'];
+  if (typeof forwarded !== 'string') return false;
+  return forwarded.split(',')[0].trim().toLowerCase() === 'https';
+}
+
+function sessionCookie(req, token, maxAgeSeconds) {
+  const secure = clientIsHttps(req) ? '; Secure' : '';
+  return `${SESSION_COOKIE}=${token}; Path=/; HttpOnly${secure}; SameSite=Strict; Max-Age=${maxAgeSeconds}`;
 }
 
 setInterval(() => {
@@ -560,14 +568,14 @@ function createApp(db) {
     const token = crypto.randomBytes(32).toString('base64url');
     sessions.set(token, { username: who, expires: Date.now() + SESSION_TTL_MS });
     sendJson(res, 200, { signedIn: true, username: who }, {
-      'Set-Cookie': sessionCookie(token, Math.floor(SESSION_TTL_MS / 1000)),
+      'Set-Cookie': sessionCookie(req, token, Math.floor(SESSION_TTL_MS / 1000)),
     });
   }
 
   async function logout(req, res) {
     const s = getSession(req);
     if (s) sessions.delete(s.token);
-    sendJson(res, 200, { signedIn: false }, { 'Set-Cookie': sessionCookie('', 0) });
+    sendJson(res, 200, { signedIn: false }, { 'Set-Cookie': sessionCookie(req, '', 0) });
   }
 
   async function createGame(req, res) {
@@ -698,54 +706,6 @@ function createApp(db) {
   };
 }
 
-// ---------------------------------------------------------------- tls
-
-function loadTlsOptions() {
-  const certPem = path.join(CERT_DIR, 'cert.pem');
-  const keyPem = path.join(CERT_DIR, 'key.pem');
-  if (fs.existsSync(certPem) && fs.existsSync(keyPem)) {
-    return { options: { cert: fs.readFileSync(certPem), key: fs.readFileSync(keyPem) }, source: 'certs/cert.pem' };
-  }
-
-  const pfxPath = path.join(CERT_DIR, 'localhost.pfx');
-  const passPath = path.join(CERT_DIR, 'localhost.pfx.pass');
-  if (!fs.existsSync(pfxPath) || !fs.existsSync(passPath)) {
-    generateSelfSigned(pfxPath, passPath);
-  }
-  return {
-    options: { pfx: fs.readFileSync(pfxPath), passphrase: fs.readFileSync(passPath, 'utf8').trim() },
-    source: 'certs/localhost.pfx (self-signed)',
-  };
-}
-
-function generateSelfSigned(pfxPath, passPath) {
-  if (process.platform !== 'win32') {
-    throw new Error('No certificate found. Put cert.pem and key.pem in the certs folder (see README.md).');
-  }
-  fs.mkdirSync(CERT_DIR, { recursive: true });
-  const passphrase = crypto.randomBytes(24).toString('base64url');
-  const script = `
-    $ErrorActionPreference = 'Stop'
-    $cert = New-SelfSignedCertificate -Subject 'CN=localhost' \`
-      -TextExtension @('2.5.29.17={text}DNS=localhost&IPAddress=127.0.0.1&IPAddress=::1') \`
-      -CertStoreLocation 'Cert:\\CurrentUser\\My' -KeyExportPolicy Exportable \`
-      -KeyAlgorithm RSA -KeyLength 2048 -HashAlgorithm SHA256 \`
-      -NotAfter (Get-Date).AddYears(2) -FriendlyName 'Demoscene game shelf (local)'
-    try {
-      $pw = ConvertTo-SecureString -String $env:SHELF_PFX_PASS -Force -AsPlainText
-      Export-PfxCertificate -Cert $cert -FilePath $env:SHELF_PFX_PATH -Password $pw -CryptoAlgorithmOption AES256_SHA256 | Out-Null
-    } finally {
-      Remove-Item -Path ('Cert:\\CurrentUser\\My\\' + $cert.Thumbprint) -DeleteKey
-    }
-  `;
-  console.log('No certificate found. Generating a self-signed certificate for localhost...');
-  execFileSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', script], {
-    env: { ...process.env, SHELF_PFX_PASS: passphrase, SHELF_PFX_PATH: pfxPath },
-    stdio: ['ignore', 'inherit', 'inherit'],
-  });
-  fs.writeFileSync(passPath, passphrase, { mode: 0o600 });
-}
-
 // ---------------------------------------------------------------- start
 
 async function main() {
@@ -755,9 +715,8 @@ async function main() {
   const db = openDatabase();
   await ensureAdmin(db);
   const handle = createApp(db);
-  const tls = loadTlsOptions();
 
-  const server = https.createServer(tls.options, (req, res) => {
+  const server = http.createServer((req, res) => {
     handle(req, res).catch((err) => {
       if (err instanceof HttpError) {
         sendError(res, err.status, err.message);
@@ -768,8 +727,9 @@ async function main() {
     });
   });
 
-  server.listen(PORT, () => {
-    console.log(`Game shelf running at https://localhost:${PORT}  (certificate: ${tls.source})`);
+  server.listen(PORT, HOST, () => {
+    console.log(`Game shelf listening on http://${HOST}:${PORT}`);
+    console.log('TLS is terminated by HAProxy. It should forward the original Host and set X-Forwarded-Proto: https.');
   });
 
   const shutdown = () => {

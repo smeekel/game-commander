@@ -10,25 +10,24 @@ Requires Node.js 22.13 or newer (it uses the built-in `node:sqlite` module). The
 npm start
 ```
 
-Then open <https://localhost:8443>.
+The process speaks plain HTTP. It listens on `127.0.0.1:8080` so only something on this machine, normally HAProxy, can reach it. Node prints an `ExperimentalWarning` for SQLite at startup; that is expected.
 
-The server only speaks HTTPS. Node prints an `ExperimentalWarning` for SQLite at startup; that is expected.
+`PORT` changes the port. `HOST` changes the bind address (`0.0.0.0` if HAProxy runs on another machine).
 
-Set `PORT` to use a different port. Binding 443 on Windows needs an elevated shell.
+## HAProxy
 
-## Certificate
+HAProxy terminates HTTPS and forwards to this process. Two things have to stay intact:
 
-On first start, if the `certs` folder has no certificate, the server creates a self-signed one for `localhost` using Windows `New-SelfSignedCertificate`, saved as `certs/localhost.pfx` with its passphrase in `certs/localhost.pfx.pass`. Browsers warn about a self-signed certificate once; accept it to continue.
+- The original `Host` header. The shelf compares it with the browser's `Origin` and rejects writes that do not match.
+- `X-Forwarded-Proto: https`. The login cookie is marked `Secure` only when that header says the browser used HTTPS.
 
-To use a real certificate, put `cert.pem` and `key.pem` in `certs/`. Those are used instead of the self-signed one. On macOS or Linux there is no automatic generation, so supply these two files, for example:
-
-```sh
-openssl req -x509 -newkey rsa:2048 -nodes -days 730 -subj "/CN=localhost" \
-  -addext "subjectAltName=DNS:localhost,IP:127.0.0.1" \
-  -keyout certs/key.pem -out certs/cert.pem
+```
+backend shelf
+    http-request set-header X-Forwarded-Proto https
+    server shelf 127.0.0.1:8080
 ```
 
-`certs/` is gitignored.
+Open the shelf at the HTTPS address HAProxy publishes, not at the raw HTTP port. The password cookie will not be stored by a browser that loaded the page over plain HTTP.
 
 ## Signing in
 
@@ -70,11 +69,10 @@ Deleting a game also deletes its thumbnail and package files when no other game 
 
 | Path | Holds |
 | --- | --- |
-| `server.js` | HTTPS server, SQLite catalog, sign-in |
+| `server.js` | HTTP server, SQLite catalog, sign-in |
 | `data/shelf.db` | Games, shelf title, admin account (gitignored) |
 | `public/thumbnails/` | Thumbnail images |
 | `public/packages/` | Downloadable packages |
 | `public/` | The page itself |
-| `certs/` | TLS certificate (gitignored) |
 
 The pixel font is [Press Start 2P](https://fonts.google.com/specimen/Press+Start+2P) by CodeMan38, under the SIL Open Font License (`public/fonts/OFL.txt`).
